@@ -13,11 +13,6 @@ class CxrVQA(nn.Module):
         self.text_encoder = CLIPTextModel.from_pretrained(
             "openai/clip-vit-base-patch32"
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            "openai/clip-vit-base-patch32",
-            truncation_side="left",
-            model_max_length=77,
-        )
 
         self.criterion = CELoss()
 
@@ -31,18 +26,11 @@ class CxrVQA(nn.Module):
 
         self.temperature = temperature
 
-    def forward(self, img, text):
+    def forward(self, imgs, texts):
         # [batch_size, 3 * 3 * 512]
-        img_features = self.image_encoder(img).flatten(start_dim=1)
+        img_features = self.image_encoder(imgs).flatten(start_dim=1)
+        outputs = self.text_encoder(**texts)
 
-        inputs = self.tokenizer(
-            text,
-            padding=True,
-            return_tensors="pt",
-            truncation=True,
-            max_length=77,
-        ).to("cuda")
-        outputs = self.text_encoder(**inputs)
         # [batch_size, 512]
         text_features = outputs.pooler_output
 
