@@ -2,15 +2,16 @@ import logging
 import re
 from enum import Enum
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import cv2
 import pandas as pd
 import torch
 import torchvision
 from torch.utils.data import Dataset
+from transformers import AutoTokenizer
 
-from src.utils import measure_time
+from src.utils.time import measure_time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -136,22 +137,39 @@ class CxrDatasetVer1(AbstractCxrDataset):
         split_path: str,
         report_dir: str,
         img_dir: str,
+        tokenizer: Optional[AutoTokenizer] = None,
         split: DatasetSplit = DatasetSplit.TRAIN,
     ):
         super().__init__(metadata_path, split_path, report_dir, img_dir, split)
 
+        if tokenizer is None:
+            self._tokenizer = self._create_tokenizer()
+        else:
+            self._tokenizer = tokenizer
         self._transformer = self._create_split_transformer()
+
+    def _create_tokenizer(self):
+        tokenizer = AutoTokenizer.from_pretrained(
+            "openai/clip-vit-base-patch32",
+            truncation_side="left",
+            padding_side="right",
+            model_max_length=77,
+        )
+
+        return tokenizer
 
     def _create_split_transformer(self):
         if self._split.value == "train":
             self.transform = torchvision.transforms.Compose(
                 [
                     torchvision.transforms.ToPILImage(),
+                    torchvision.transforms.Resize(224),
                     torchvision.transforms.RandomHorizontalFlip(),
                     torchvision.transforms.RandomRotation(15),
+                    torchvision.transforms.Grayscale(num_output_channels=1),
                     torchvision.transforms.ToTensor(),
                     torchvision.transforms.Normalize(
-                        mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+                        mean=(0.485,), std=(0.229,)
                     ),
                 ]
             )
@@ -159,9 +177,11 @@ class CxrDatasetVer1(AbstractCxrDataset):
             self.transform = torchvision.transforms.Compose(
                 [
                     torchvision.transforms.ToPILImage(),
+                    torchvision.transforms.Resize(224),
+                    torchvision.transforms.Grayscale(num_output_channels=1),
                     torchvision.transforms.ToTensor(),
                     torchvision.transforms.Normalize(
-                        mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+                        mean=(0.485,), std=(0.229,)
                     ),
                 ]
             )
@@ -172,8 +192,21 @@ class CxrDatasetVer1(AbstractCxrDataset):
 
         return img
 
-    @measure_time(logger=logger)
+    def _load_and_process_text(self, text_path: Path) -> torch.Tensor:
+        txt = super()._load_and_process_text(text_path)
+        tokens = self._tokenizer(
+            txt,
+            padding="max_length",
+            truncation=True,
+            max_length=77,
+            return_tensors="pt",
+        )
+
+        return tokens
+
+    # @measure_time(logger=logger)
     def __getitem__(self, index):
         img = self._load_and_process_img(self._img_paths[index])
-        report = self._load_and_process_text(self._report_paths[index])
-        return img, report
+        txt = self._load_and_process_text(self._report_paths[index])
+
+        return img, txt

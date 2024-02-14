@@ -379,3 +379,4 @@ android/pytorch_android_torchvision/.cxx
 
 # Data folder
 data/
+ckpts/
