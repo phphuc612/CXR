@@ -147,11 +147,13 @@ class CxrDatasetVer1(AbstractCxrDataset):
             self.transform = torchvision.transforms.Compose(
                 [
                     torchvision.transforms.ToPILImage(),
+                    torchvision.transforms.Resize(224),
                     torchvision.transforms.RandomHorizontalFlip(),
                     torchvision.transforms.RandomRotation(15),
+                    torchvision.transforms.Grayscale(num_output_channels=1),
                     torchvision.transforms.ToTensor(),
                     torchvision.transforms.Normalize(
-                        mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+                        mean=(0.485,), std=(0.229,)
                     ),
                 ]
             )
@@ -159,9 +161,11 @@ class CxrDatasetVer1(AbstractCxrDataset):
             self.transform = torchvision.transforms.Compose(
                 [
                     torchvision.transforms.ToPILImage(),
+                    torchvision.transforms.Resize(224),
+                    torchvision.transforms.Grayscale(num_output_channels=1),
                     torchvision.transforms.ToTensor(),
                     torchvision.transforms.Normalize(
-                        mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+                        mean=(0.485,), std=(0.229,)
                     ),
                 ]
             )
@@ -172,7 +176,6 @@ class CxrDatasetVer1(AbstractCxrDataset):
 
         return img
 
-    @measure_time(logger=logger)
     def __getitem__(self, index):
         img = self._load_and_process_img(self._img_paths[index])
         report = self._load_and_process_text(self._report_paths[index])
