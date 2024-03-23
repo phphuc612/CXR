@@ -32,6 +32,7 @@ class AbstractCxrDataset(Dataset):
         report_dir: str,
         img_dir: str,
         split: DatasetSplit = DatasetSplit.TRAIN,
+        testing: bool = False,
     ):
         self._report_dir = Path(report_dir)
         self._img_dir = Path(img_dir)
@@ -42,6 +43,10 @@ class AbstractCxrDataset(Dataset):
         )
         self._img_paths = self._create_img_paths()
         self._report_paths = self._create_report_paths()
+
+        if testing:
+            self._img_paths = self._img_paths[:200]
+            self._report_paths = self._report_paths[:200]
 
     def _extract_metadata_for_split(
         self, metadata_path: str, split_path: str
@@ -102,7 +107,7 @@ class AbstractCxrDataset(Dataset):
         return report_paths
 
     def __len__(self):
-        return len(self._metadata)
+        return len(self._img_paths)
 
     def __getitem__(self, index):
         raise NotImplementedError
@@ -139,8 +144,11 @@ class CxrDatasetVer1(AbstractCxrDataset):
         img_dir: str,
         tokenizer: Optional[AutoTokenizer] = None,
         split: DatasetSplit = DatasetSplit.TRAIN,
+        testing: bool = False,
     ):
-        super().__init__(metadata_path, split_path, report_dir, img_dir, split)
+        super().__init__(
+            metadata_path, split_path, report_dir, img_dir, split, testing
+        )
 
         if tokenizer is None:
             self._tokenizer = self._create_tokenizer()
@@ -210,3 +218,84 @@ class CxrDatasetVer1(AbstractCxrDataset):
         txt = self._load_and_process_text(self._report_paths[index])
 
         return img, txt
+
+
+class CxrEvaluationCLIP(AbstractCxrDataset):
+    def __init__(
+        self,
+        label_path: str,
+        img_dir: str,
+        testing: bool = False,
+    ):
+        self._img_dir = Path(img_dir)
+        self._labels = pd.read_csv(label_path, dtype="str")
+        self._label_names = list(self._labels.columns[6:])
+
+        self._img_paths = self._create_img_paths()
+        self._transform = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToPILImage(),
+                torchvision.transforms.Resize(224),
+                torchvision.transforms.Grayscale(num_output_channels=1),
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize(mean=(0.485,), std=(0.229,)),
+            ]
+        )
+        self._tokenizer = self._create_tokenizer()
+
+    def _create_tokenizer(self):
+        tokenizer = AutoTokenizer.from_pretrained(
+            "openai/clip-vit-base-patch32",
+            truncation_side="left",
+            padding_side="right",
+            model_max_length=77,
+        )
+
+        return tokenizer
+
+    def _create_img_paths(self) -> List[Path]:
+        img_paths = []
+
+        def _create_path(row: pd.Series) -> Path:
+            part_id = self.extract_subject_part(row["subject_id"])
+            subject_id = row["subject_id"]
+            study_id = row["study_id"]
+            img_id = row["dicom_id"]
+            return (
+                self._img_dir
+                / f"p{part_id}"
+                / f"p{subject_id}"
+                / f"s{study_id}"
+                / f"{img_id}.jpg"
+            )
+
+        self._labels.apply(
+            lambda x: img_paths.append(_create_path(x)),
+            axis=1,
+        )
+
+        return img_paths
+
+    def _load_and_process_text(self, index: int) -> torch.Tensor:
+        # 26 pathologies -> tensor [26, (...)] with (...) is for each pathology
+        text = (
+            "This x-ray image shows a chest "
+            "with a possible pathology of "
+            f"{self._labels['pathology'][index]}"
+        )
+
+        tokens = self._tokenizer(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=77,
+            return_tensors="pt",
+        )
+
+        return tokens
+
+    def __getitem__(self, index):
+        img = self._load_and_process_img(self._img_paths[index])
+        txt = self._load_and_process_text(index)
+
+        return img, txt, self._labels["label"][index].astype(int)
