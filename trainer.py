@@ -1,3 +1,4 @@
+# Given code is reference from https://github.com/moein-shariatnia/OpenAI-CLIP/blob/master/main.py
 from collections import defaultdict
 
 import torch
@@ -8,6 +9,8 @@ from myconfig import CFG
 from src.data_management.dataset import CxrDatasetVer1, DatasetSplit
 from src.models.experiments import CxrVQA
 from src.utils import AvgMeter
+
+IS_TESTING = False
 
 
 def collate_fn(batch):
@@ -29,6 +32,7 @@ train_ds = CxrDatasetVer1(
     report_dir="data/mimic-cxr-reports",
     img_dir="data/cxr_dataset",
     split=DatasetSplit.TRAIN,
+    testing=IS_TESTING,
 )
 
 val_ds = CxrDatasetVer1(
@@ -37,6 +41,7 @@ val_ds = CxrDatasetVer1(
     report_dir="data/mimic-cxr-reports",
     img_dir="data/cxr_dataset",
     split=DatasetSplit.VAL,
+    testing=IS_TESTING,
 )
 
 train_loader = torch.utils.data.DataLoader(
@@ -54,8 +59,6 @@ val_loader = torch.utils.data.DataLoader(
     collate_fn=collate_fn,
 )
 
-loss_meter = AvgMeter()
-tqdm_object = tqdm(train_loader, total=len(train_loader))
 model = CxrVQA().to(CFG.device)
 optimizer = torch.optim.AdamW(
     model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay
@@ -95,6 +98,8 @@ for epoch in range(CFG.epochs):
     print(f"Epoch: {epoch + 1}")
     model.train()
 
+    loss_meter = AvgMeter()
+    tqdm_object = tqdm(train_loader, total=len(train_loader))
     for batch in tqdm_object:
         imgs = batch[0].to(CFG.device)
         texts = batch[1].to(CFG.device)

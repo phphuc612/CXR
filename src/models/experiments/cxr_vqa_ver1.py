@@ -26,6 +26,28 @@ class CxrVQA(nn.Module):
 
         self.temperature = temperature
 
+    def encode_image(self, imgs):
+        img_features = self.image_encoder(imgs).flatten(start_dim=1)
+        img_emb = self.image_projection(img_features)
+
+        return img_emb
+
+    def encode_text(self, texts):
+        outputs = self.text_encoder(**texts)
+        text_features = outputs.pooler_output
+        text_emb = self.text_projection(text_features)
+
+        return text_emb
+
+    def calcluate_similarity(self, imgs, texts):
+        img_emb = self.encode_image(imgs)
+        text_emb = self.encode_text(texts)
+
+        # element-wise multiplication
+        sim = F.cosine_similarity(img_emb, text_emb, dim=-1)
+
+        return sim
+
     def forward(self, imgs, texts):
         # [batch_size, 3 * 3 * 512]
         img_features = self.image_encoder(imgs).flatten(start_dim=1)
